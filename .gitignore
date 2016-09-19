@@ -1,0 +1,5 @@
+.vs/
+typings/
+wsway.njsproj
+wsway.sln
+node_modules/

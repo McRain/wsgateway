@@ -1,0 +1,28 @@
+{
+  "name": "wsway",
+  "version": "1.0.0",
+  "description": "websocket network tools",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/McRain/wsway.git"
+  },
+  "keywords": [
+    "websocket",
+    "websockets",
+    "game",
+    "server"
+  ],
+  "author": "Viktor Abdulov <admin@reneos.com> (http://blog.reneos.com)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/McRain/wsway/issues"
+  },
+  "homepage": "https://github.com/McRain/wsway#readme",
+  "dependencies": {
+    "ws": "1.1.1"
+  }
+}
