@@ -1,11 +1,11 @@
 {
-  "name": "wsway",
+  "name": "wsgateway",
   "version": "1.0.0",
   "description": "websocket network tools",
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/McRain/wsway.git"
+    "url": "git+https://github.com/McRain/wsgateway.git"
   },
   "keywords": [
     "websocket",
