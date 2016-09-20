@@ -2,20 +2,24 @@
 var WebSocketServer = require("ws").Server;
 var EventEmitter = require("events");
 
-class WsGateway extends EventEmitter{
-    constructor(opt,verify) {
+class WsGateway extends EventEmitter {
+    constructor(opt, verify) {
         super();
         this.ws = null;
         this.handlers = {};
-        this.options = {
-            debug:true,port:30001,debugKey:"",hashkey:"hash"
-        };
+        this.origin = opt.origin;
+        this.port = opt.port;
+        this.hashKey = opt.hashKey == null ? "hash=" : opt.hashKey;
         var self = this;
-        if (opt!=null)
-        Object.keys(opt).forEach(function (k) {
-            self.options[k] = opt[k];
-        });
         this.verify = verify != null ? verify : function (info, done) {
+            var origin;
+            try {
+                origin = info.req.headers.origin;
+            } catch (e) {
+                return done(false);
+            } 
+            if (origin!== self.origin)
+                return done(false);
             return done(true);
         }
     }
@@ -23,24 +27,25 @@ class WsGateway extends EventEmitter{
         container.Code = code;
         this.handlers[code] = container.RequestHandler;
     }
-    start() {
-        this.ws = new WebSocketServer({ port: this.options.port, verifyClient: this.verify });
+    start(auth) {
+        this.ws = new WebSocketServer({ port: this.port, verifyClient: this.verify });
         var self = this;
         this.ws.on("connection",
             function (ws) {
+                ws.platform = self.platform;
                 var hash;
                 try {
                     const cookie = ws.upgradeReq.headers.cookie;
-                    hash = cookie.replace(self.options.hashkey+"=", "");
+                    hash = cookie.replace(self.hashKey, "");
                 } catch (e) {
                     self.emit("error", e, ws);
                     return;
                 }
                 if (hash == null) {
-                    self.emit("error", "hash not find",  ws);
+                    self.emit("error", "Hash not find", ws);
                     return;
                 }
-                self.emit("open", hash, ws, function(error, user) {
+                auth(hash, function (error, user) {
                     if (error)
                         return;
                     ws.on("message",
@@ -57,18 +62,22 @@ class WsGateway extends EventEmitter{
                             }
                             const handler = self.handlers[target];
                             if (!handler) {
-                                self.emit("error", `recived unknow target ${target}`, ws, user);
+                                self.emit("error", `Recived unknow target ${target}`, ws, user);
                                 return;
                             }
                             handler(user, method, packet, data, function (t, m, p, d) {
-                                ws.send(Buffer.concat([self.getHeader(t, m, p), d]));
+                                try {
+                                    ws.send(Buffer.concat([self.getHeader(t, m, p), d]));
+                                } catch (e) {
+                                    self.emit("error", e, ws, user);
+                                }
                             });
                         });
                     ws.on("close", function (c, m) {
-                        self.emit("close",ws,user, c, m);
+                        self.emit("close", ws, user, c, m);
                     });
                     ws.on("error", function (e) {
-                        self.emit("error",e, ws, user);
+                        self.emit("error", e, ws, user);
                     });
                     self.emit("connect", ws, user);
                 });
@@ -76,15 +85,13 @@ class WsGateway extends EventEmitter{
         this.emit("start", this);
     }
     stop() {
-        
+
     }
-    getHeader(t,m,p) {
+    getHeader(t, m, p) {
         const buffer = Buffer.allocUnsafe(8);
         buffer[0] = t;
         buffer[1] = m;
-        if (p == null)
-            p = 0;
-        buffer.writeInt32LE(p, 2);
+        buffer.writeInt32LE(p != null ? p : 0, 2);
         return buffer;
     }
 }
