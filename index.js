@@ -21,19 +21,18 @@ class WsGateway extends EventEmitter {
     /**
      * 
      * @param opt : Options
-     * @param verify : preconnect verify
-     * @param hashReader : hash reader method
+     * @param basicAuth : Basic Auth
+     * @param onConnectAuth : On Connection Auth
      */
-    constructor(opt, verify, hashReader) {
+    constructor(opt, basicAuth, onConnectAuth) {
         super();
         this.origin = opt.origin;
         this.port = opt.port;
         this.hashKey = opt.hashKey == null ? "hash=" : opt.hashKey;
         this.ws = null;
-        this.platform = "unknow";
         this.handlers = {};
         var self = this;
-        this.verify = verify != null ? verify : function (info, done) {
+        this.basicAuth = basicAuth != null ? basicAuth : function (info, done) {
             var origin;
             try {
                 origin = info.req.headers.origin;
@@ -44,7 +43,7 @@ class WsGateway extends EventEmitter {
                 return done(false);
             return done(true);
         }
-        this.hashReader = hashReader != null ? hashReader : function (gw, cb) {
+        this.onConnectAuth = onConnectAuth != null ? onConnectAuth : function (gw, cb) {
             var hash;
             try {
                 const cookie = gw.upgradeReq.headers.cookie;
@@ -64,53 +63,46 @@ class WsGateway extends EventEmitter {
         container.Code = code;
         this.handlers[code] = container.RequestHandler;
     }
-    start(authentificator) {
-        this.ws = new WebSocketServer({ port: this.port, verifyClient: this.verify });
+    start() {
+        this.ws = new WebSocketServer({ port: this.port, verifyClient: this.basicAuth });
         var self = this;
         this.ws.on("connection",
             function (ws) {
-                ws.platform = self.platform;
-                self.hashReader(ws, function (err, hh) {
-                    if (err) {
-                        self.emit(WsGateway.ERROR, err);
+                self.onConnectAuth(ws, function (error, user) {
+                    if (error)
                         return;
-                    }
-                    authentificator(hh, function (error, user) {
-                        if (error)
-                            return;
-                        ws.on("message",
-                            function (message, arg) {
-                                var target, method, packet, data;
+                    ws.on("message",
+                        function (message, arg) {
+                            var target, method, packet, data;
+                            try {
+                                target = message[0];
+                                method = message[1];
+                                packet = message.readInt32LE(2);
+                                data = message.slice(8);
+                            } catch (e) {
+                                self.emit(WsGateway.ERROR, e, ws, user);
+                                return;
+                            }
+                            const handler = self.handlers[target];
+                            if (!handler) {
+                                self.emit(WsGateway.MESSAGE, user, target, method, packet, data);
+                                return;
+                            }
+                            handler(user, method, packet, data, function (t, m, p) {
                                 try {
-                                    target = message[0];
-                                    method = message[1];
-                                    packet = message.readInt32LE(2);
-                                    data = message.slice(8);
+                                    ws.send(Buffer.concat([self.getHeader(t, m, p), d]));
                                 } catch (e) {
                                     self.emit(WsGateway.ERROR, e, ws, user);
-                                    return;
                                 }
-                                const handler = self.handlers[target];
-                                if (!handler) {
-                                    self.emit(WsGateway.MESSAGE, user, target, method, packet, data);
-                                    return;
-                                }
-                                handler(user, method, packet, data, function (t,m,p) {
-                                    try {
-                                        ws.send(Buffer.concat([self.getHeader(t, m, p), d]));
-                                    } catch (e) {
-                                        self.emit(WsGateway.ERROR, e, ws, user);
-                                    }
-                                });
                             });
-                        ws.on("close", function (c, m) {
-                            self.emit(WsGateway.CLOSE, c, m,user);
                         });
-                        ws.on("error", function (e) {
-                            self.emit(WsGateway.ERROR, e, ws, user);
-                        });
-                        self.emit(WsGateway.CONNECT, ws, user);
+                    ws.on("close", function (c, m) {
+                        self.emit(WsGateway.CLOSE, c, m, user);
                     });
+                    ws.on("error", function (e) {
+                        self.emit(WsGateway.ERROR, e, ws, user);
+                    });
+                    self.emit(WsGateway.CONNECT, ws, user);
                 });
                 
             });
