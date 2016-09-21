@@ -11,7 +11,8 @@
     "websocket",
     "websockets",
     "game",
-    "server"
+    "server",
+    "gateway"
   ],
   "author": "Viktor Abdulov <admin@reneos.com> (http://blog.reneos.com)",
   "license": "MIT",
