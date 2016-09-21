@@ -17,9 +17,9 @@
   "author": "Viktor Abdulov <admin@reneos.com> (http://blog.reneos.com)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/McRain/wsway/issues"
+    "url": "https://github.com/McRain/wsgateway/issues"
   },
-  "homepage": "https://github.com/McRain/wsway#readme",
+  "homepage": "https://github.com/McRain/wsgateway#readme",
   "dependencies": {
     "ws": "^1.1.1"
   }
