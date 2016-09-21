@@ -1,6 +1,6 @@
 {
   "name": "wsgateway",
-  "version": "1.0.2b",
+  "version": "1.0.1",
   "description": "websocket network tools",
   "main": "index.js",
   "repository": {
