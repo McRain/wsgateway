@@ -80,24 +80,24 @@ class WsGateway extends EventEmitter {
                             return;
                         ws.on("message",
                             function (message, arg) {
-                                var target;//, method, packet, data;
+                                var target, method, packet, data;
                                 try {
                                     target = message[0];
-                                    /*method = message[1];
+                                    method = message[1];
                                     packet = message.readInt32LE(2);
-                                    data = message.slice(8);*/
+                                    data = message.slice(8);
                                 } catch (e) {
                                     self.emit(WsGateway.ERROR, e, ws, user);
                                     return;
                                 }
                                 const handler = self.handlers[target];
                                 if (!handler) {
-                                    self.emit(WsGateway.MESSAGE, user, target/*, method, packet*/, data);
+                                    self.emit(WsGateway.MESSAGE, user, target, method, packet, data);
                                     return;
                                 }
-                                handler(user, /*method, packet*/, data, function (buffer) {
+                                handler(user, method, packet, data, function (t,m,p) {
                                     try {
-                                        ws.send(buffer);//Buffer.concat([self.getHeader(t, m, p), d]));
+                                        ws.send(Buffer.concat([self.getHeader(t, m, p), d]));
                                     } catch (e) {
                                         self.emit(WsGateway.ERROR, e, ws, user);
                                     }
