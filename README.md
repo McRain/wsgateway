@@ -1,1 +1,1 @@
-# wsway
+# WsGateway
