@@ -1,5 +1,5 @@
 "use strict";
-var WebSocketServer = require("ws").Server;
+var WebSocket = require("ws");
 var EventEmitter = require("events");
 
 class WsGateway extends EventEmitter {
@@ -26,76 +26,68 @@ class WsGateway extends EventEmitter {
      */
     constructor(opt, basicAuth, onConnectAuth) {
         super();
+        this.ip = opt.ip;//for client
         this.origin = opt.origin;
         this.port = opt.port;
-        this.hashKey = opt.hashKey == null ? "hash=" : opt.hashKey;
+        this.hashKey = opt.hash != null ? opt.hash : opt.hashKey != null ? opt.hashKey : "hash=";
         this.ws = null;
         this.handlers = {};
         var self = this;
-        this.basicAuth = basicAuth != null ? basicAuth : function (info, done) {
-            var origin;
-            try {
-                origin = info.req.headers.origin;
-            } catch (e) {
-                return done(false);
-            } 
-            if (origin!== self.origin)
-                return done(false);
-            return done(true);
+        if (this.ip == null) {//server
+            this.basicAuth = basicAuth != null ? basicAuth : function (info, done) {
+                var origin;
+                try {
+                    origin = info.req.headers.origin;
+                } catch (e) {
+                    return done(false);
+                }
+                if (origin !== self.origin)
+                    return done(false);
+                return done(true);
+            }
+            this.onConnectAuth = onConnectAuth != null ? onConnectAuth : function (gw, cb) {
+                var hash;
+                try {
+                    const cookie = gw.upgradeReq.headers.cookie;
+                    hash = cookie.replace(self.hashKey, "");
+                } catch (e) {
+                    cb(e);
+                    return;
+                }
+                if (hash == null) {
+                    cb("Hash not find");
+                    return;
+                }
+                cb(null, hash);
+            };
+            return;
         }
-        this.onConnectAuth = onConnectAuth != null ? onConnectAuth : function (gw, cb) {
-            var hash;
-            try {
-                const cookie = gw.upgradeReq.headers.cookie;
-                hash = cookie.replace(self.hashKey, "");
-            } catch (e) {
-                cb(e);
-                return;
-            }
-            if (hash == null) {
-                cb("Hash not find");
-                return;
-            }
-            cb(null, hash);
+        //is client
+        this.onConnectAuth = onConnectAuth != null ? onConnectAuth : function (message, arg) {
+            self.messageParser(self.socket, self.user, message, arg);
+        };
+        this.basicAuth = basicAuth != null ? basicAuth : function () {
+            self.socket.on("message", self.onConnectAuth);
         };
     }
     addHandler(code, container) {
         container.Code = code;
         this.handlers[code] = container.RequestHandler;
     }
+    /**
+     * Server start
+     */
     start() {
-        this.ws = new WebSocketServer({ port: this.port, verifyClient: this.basicAuth });
+        this.ws = new WebSocket.Server({ port: this.port, verifyClient: this.basicAuth });
         var self = this;
         this.ws.on("connection",
             function (ws) {
                 self.onConnectAuth(ws, function (error, user) {
                     if (error)
                         return;
-                    ws.on("message",
-                        function (message, arg) {
-                            var target, method, packet, data;
-                            try {
-                                target = message[0];
-                                method = message[1];
-                                packet = message.readInt32LE(2);
-                                data = message.slice(8);
-                            } catch (e) {
-                                self.emit(WsGateway.ERROR, e, ws, user);
-                                return;
-                            }
-                            const handler = self.handlers[target];
-                            if (!handler) {
-                                self.emit(WsGateway.MESSAGE, user, target, method, packet, data);
-                                return;
-                            }
-                            handler(user, method, packet, data, function (t, m, p) {
-                                try {
-                                    ws.send(Buffer.concat([self.getHeader(t, m, p), d]));
-                                } catch (e) {
-                                    self.emit(WsGateway.ERROR, e, ws, user);
-                                }
-                            });
-                        });
+                    ws.on("message", function (msg, arg) {
+                        self.messageParser(ws, user, msg, arg);
+                    });
                     ws.on("close", function (c, m) {
                         self.emit(WsGateway.CLOSE, c, m, user);
                     });
@@ -104,13 +96,61 @@ class WsGateway extends EventEmitter {
                     });
                     self.emit(WsGateway.CONNECT, ws, user);
                 });
-                
+
             });
         this.emit(WsGateway.START, this);
     }
-    stop() {
-
+    /**
+     * Client connect
+     */
+    connect() {
+        var self = this;
+        this.socket = new WebSocket(`ws:${this.ip}:${this.port}`, this.hashKey);
+        this.socket.on("open", function (a1, a2, a3) {
+            self.emit(WsGateway.CONNECT, self);
+            self.user = self.socket;
+            self.basicAuth();
+        });
     }
+    send(target, method, packet, buffer) {
+        if (this.socket == null || this.socket.readyState !== 1/*WebSocket.OPEN*/) return;
+        try {
+            var header = this.getHeader(target, method, packet);
+            var buff = Buffer.concat([header, buffer]);
+            this.socket.send(buff, { binary: true, mask: true });
+        } catch (e) {
+            this.emit(WsGateway.ERROR, e, this.socket, this.user);
+        }
+    }
+    stop() {
+        if (this.ws != null)
+            this.ws.close();
+    }
+    messageParser(socket, user, message, arg) {
+        var target, method, packet, data;
+        try {
+            target = message[0];
+            method = message[1];
+            packet = message.readInt32LE(2);
+            data = message.slice(8);
+        } catch (e) {
+            this.emit(WsGateway.ERROR, e, socket, user);
+            return;
+        }
+        const handler = this.handlers[target];
+        if (!handler) {
+            this.emit(WsGateway.MESSAGE, user, target, method, packet, data);
+            return;
+        }
+        handler(user, method, packet, data, function (t, m, p) {
+            try {
+                socket.send(Buffer.concat([this.getHeader(t, m, p), d]));
+            } catch (e) {
+                this.emit(WsGateway.ERROR, e, socket, user);
+            }
+        });
+    }
+
     getHeader(t, m, p) {
         const buffer = Buffer.allocUnsafe(8);
         buffer[0] = t;
