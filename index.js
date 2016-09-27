@@ -2,6 +2,9 @@
 var WebSocket = require("ws");
 var EventEmitter = require("events");
 
+/**
+ * Small helper in creating gateways to communicate between client and server.
+ */
 class WsGateway extends EventEmitter {
     static get ERROR() {
         return "error";
@@ -21,17 +24,17 @@ class WsGateway extends EventEmitter {
     /**
      * 
      * @param opt : Options
-     * @param basicAuth : Basic Auth
-     * @param onConnectAuth : On Connection Auth
+     * @param basicAuth : Basic Auth by origin
+     * @param onConnectAuth : Extend Auth by cookie
      */
-    constructor(opt, basicAuth, onConnectAuth) {
+    constructor(opt, basicAuth, extendAuth, headers) {
         super();
         this.ip = opt.ip;//for client
         this.origin = opt.origin;
         this.port = opt.port;
         this.hashKey = opt.hash != null ? opt.hash : opt.hashKey != null ? opt.hashKey : "hash=";
-        this.ws = null;
         this.handlers = {};
+        this.socket = null;//в сервере и клиенте - общий websocket
         var self = this;
         if (this.ip == null) {//server
             this.basicAuth = basicAuth != null ? basicAuth : function (info, done) {
@@ -45,11 +48,10 @@ class WsGateway extends EventEmitter {
                     return done(false);
                 return done(true);
             }
-            this.onConnectAuth = onConnectAuth != null ? onConnectAuth : function (gw, cb) {
+            this.extendAuth = extendAuth != null ? extendAuth : function (gw, cb) {
                 var hash;
                 try {
-                    const cookie = gw.upgradeReq.headers.cookie;
-                    hash = cookie.replace(self.hashKey, "");
+                    hash = gw.upgradeReq.headers["sec-websocket-protocol"];
                 } catch (e) {
                     cb(e);
                     return;
@@ -58,17 +60,18 @@ class WsGateway extends EventEmitter {
                     cb("Hash not find");
                     return;
                 }
-                cb(null, hash);
+                cb(null, {});
             };
             return;
         }
-        //is client
-        this.onConnectAuth = onConnectAuth != null ? onConnectAuth : function (message, arg) {
-            self.messageParser(self.socket, self.user, message, arg);
+        //is client - use extendAuth as message reader
+        this.extendAuth = extendAuth != null ? extendAuth : function (message, arg) {
+            self.messageParser(self.socket, self.socket, message, arg);
         };
         this.basicAuth = basicAuth != null ? basicAuth : function () {
-            self.socket.on("message", self.onConnectAuth);
+            self.socket.on("message", self.extendAuth);
         };
+        this.headers = headers;
     }
     addHandler(code, container) {
         container.Code = code;
@@ -78,11 +81,11 @@ class WsGateway extends EventEmitter {
      * Server start
      */
     start() {
-        this.ws = new WebSocket.Server({ port: this.port, verifyClient: this.basicAuth });
+        this.socket = new WebSocket.Server({ port: this.port, verifyClient: this.basicAuth });
         var self = this;
-        this.ws.on("connection",
+        this.socket.on("connection",
             function (ws) {
-                self.onConnectAuth(ws, function (error, user) {
+                self.extendAuth(ws, function (error, user) {
                     if (error)
                         return;
                     ws.on("message", function (msg, arg) {
@@ -105,32 +108,45 @@ class WsGateway extends EventEmitter {
      */
     connect() {
         var self = this;
-        this.socket = new WebSocket(`ws:${this.ip}:${this.port}`, this.hashKey);
+        var op = { "origin": this.origin };
+        if (this.headers != null)
+            op.headers = this.headers;
+        this.socket = new WebSocket(`ws:${this.ip}:${this.port}`, this.hashKey, op);
         this.socket.on("open", function (a1, a2, a3) {
             self.emit(WsGateway.CONNECT, self);
-            self.user = self.socket;
             self.basicAuth();
         });
     }
-    send(target, method, packet, buffer) {
-        if (this.socket == null || this.socket.readyState !== 1/*WebSocket.OPEN*/) return;
+    sendTo(socket, target, method, packet, buffer) {
+        if (socket == null || socket.readyState !== 1/*WebSocket.OPEN*/) return;
+        const self = this;
+        if (buffer == null)
+            buffer = Buffer.allocUnsafe(0);
         try {
-            var header = this.getHeader(target, method, packet);
-            var buff = Buffer.concat([header, buffer]);
-            this.socket.send(buff, { binary: true, mask: true });
+            const header = this.getHeader(target, method, packet);
+            const buff = Buffer.concat([header, buffer]);
+            socket.send(buff, { binary: true, mask: true }, function (error) {
+                if (error != null)
+                    self.emit(WsGateway.ERROR, error, socket);
+            });
         } catch (e) {
-            this.emit(WsGateway.ERROR, e, this.socket, this.user);
+            this.emit(WsGateway.ERROR, e, socket);
         }
     }
+    send(target, method, packet, buffer) {
+        this.sendTo(this.socket, target, method, packet, buffer);
+    }
     stop() {
-        if (this.ws != null)
-            this.ws.close();
+        if (this.socket != null)
+            this.socket.close();
     }
     messageParser(socket, user, message, arg) {
-        var target, method, packet, data;
+        let target;
+        let method;
+        let packet;
+        let data;
         try {
-            target = message[0];
-            method = message[1];
+            [target, method] = message;
             packet = message.readInt32LE(2);
             data = message.slice(8);
         } catch (e) {
@@ -142,15 +158,18 @@ class WsGateway extends EventEmitter {
             this.emit(WsGateway.MESSAGE, user, target, method, packet, data);
             return;
         }
-        handler(user, method, packet, data, function (t, m, p) {
+        var self = this;
+        handler(user, method, packet, data, function (t, m, p, d) {
             try {
-                socket.send(Buffer.concat([this.getHeader(t, m, p), d]));
+                socket.send(Buffer.concat([self.getHeader(t, m, p), d]), { binary: true, mask: true }, function (error) {
+                    if (error != null)
+                        self.emit(WsGateway.ERROR, error, socket);
+                });
             } catch (e) {
-                this.emit(WsGateway.ERROR, e, socket, user);
+                self.emit(WsGateway.ERROR, e, socket, user);
             }
         });
     }
-
     getHeader(t, m, p) {
         const buffer = Buffer.allocUnsafe(8);
         buffer[0] = t;
