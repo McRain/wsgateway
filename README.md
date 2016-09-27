@@ -14,6 +14,8 @@ Easy and simple tools for creating gateways to communicate between client and se
 npm install --save wsgateway
 ```
 
+For an example, see the catalog "Examples"
+
 ### Base use as server
 
 ```js
