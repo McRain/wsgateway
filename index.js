@@ -66,7 +66,7 @@ class WsGateway extends EventEmitter {
         }
         //is client - use extendAuth as message reader
         this.extendAuth = extendAuth != null ? extendAuth : function (message, arg) {
-            self.messageParser(self.socket, self.socket, message, arg);
+            self.messageParser(self.socket,self, self.socket, message, arg);
         };
         this.basicAuth = basicAuth != null ? basicAuth : function () {
             self.socket.on("message", self.extendAuth);
@@ -146,7 +146,8 @@ class WsGateway extends EventEmitter {
         let packet;
         let data;
         try {
-            [target, method] = message;
+            target = message[0];
+            method = message[1];
             packet = message.readInt32LE(2);
             data = message.slice(8);
         } catch (e) {
