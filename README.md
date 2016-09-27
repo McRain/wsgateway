@@ -6,7 +6,7 @@
 [![Twitter](https://img.shields.io/twitter/url/https/github.com/McRain/wsgateway/.svg?style=social)](https://twitter.com/intent/tweet?text=WebSocket gateway:&url=https://github.com/McRain/wsgateway)
 
 
-#Small and simple tools for creating gateways to communicate between client and server to use websocket and node.js.
+Small and simple tools for creating gateways to communicate between client and server to use websocket and node.js.
 
 ### Installing
 
