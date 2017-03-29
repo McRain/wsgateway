@@ -21,6 +21,6 @@
   },
   "homepage": "https://github.com/McRain/wsgateway#readme",
   "dependencies": {
-    "ws": "^1.1.1"
+    "ws": "1.1.4"
   }
 }

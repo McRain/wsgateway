@@ -7,20 +7,23 @@ var EventEmitter = require("events");
  */
 class WsGateway extends EventEmitter {
     static get ERROR() {
-        return "error";
-    }
-    static get CLOSE() {
-        return "close";
-    }
-    static get START() {
-        return "start";
-    }
-    static get CONNECT() {
-        return "connect";
-    }
-    static get MESSAGE() {
-        return "message";
-    }
+    return "error";
+}
+static get CLOSE() {
+    return "close";
+}
+static get START() {
+    return "start";
+}
+static get CONNECT() {
+    return "connect";
+}
+static get MESSAGE() {
+    return "message";
+}
+static get ERROR() {
+    return "error";
+}
     /**
      * 
      * @param opt : Options
@@ -29,15 +32,15 @@ class WsGateway extends EventEmitter {
      */
     constructor(opt, basicAuth, extendAuth, headers) {
         super();
-        this.ip = opt.ip;//for client
+        this.ip = opt.ip; //for client
         this.origin = opt.origin;
         this.port = opt.port;
         this.hashKey = opt.hash != null ? opt.hash : opt.hashKey != null ? opt.hashKey : "hash=";
         this.handlers = {};
-        this.socket = null;//в сервере и клиенте - общий websocket
+        this.socket = null; //в сервере и клиенте - общий websocket
         var self = this;
-        if (this.ip == null) {//server
-            this.basicAuth = basicAuth != null ? basicAuth : function (info, done) {
+        if (this.ip == null) { //server
+            this.basicAuth = basicAuth != null ? basicAuth : function(info, done) {
                 var origin;
                 try {
                     origin = info.req.headers.origin;
@@ -48,7 +51,7 @@ class WsGateway extends EventEmitter {
                     return done(false);
                 return done(true);
             }
-            this.extendAuth = extendAuth != null ? extendAuth : function (gw, cb) {
+            this.extendAuth = extendAuth != null ? extendAuth : function(gw, cb) {
                 var hash;
                 try {
                     hash = gw.upgradeReq.headers["sec-websocket-protocol"];
@@ -65,10 +68,10 @@ class WsGateway extends EventEmitter {
             return;
         }
         //is client - use extendAuth as message reader
-        this.extendAuth = extendAuth != null ? extendAuth : function (message, arg) {
-            self.messageParser(self.socket,self, self.socket, message, arg);
+        this.extendAuth = extendAuth != null ? extendAuth : function(message, arg) {
+            self.messageParser(self.socket, self, message, arg);
         };
-        this.basicAuth = basicAuth != null ? basicAuth : function () {
+        this.basicAuth = basicAuth != null ? basicAuth : function() {
             self.socket.on("message", self.extendAuth);
         };
         this.headers = headers;
@@ -77,6 +80,7 @@ class WsGateway extends EventEmitter {
         container.Code = code;
         this.handlers[code] = container.RequestHandler;
     }
+
     /**
      * Server start
      */
@@ -86,8 +90,10 @@ class WsGateway extends EventEmitter {
         this.socket.on("connection",
             function (ws) {
                 self.extendAuth(ws, function (error, user) {
-                    if (error)
+                    if (error) {
+                        //ws.send(Buffer.from([error]), { binary: true, mask: this.masked });
                         return;
+                    }
                     ws.on("message", function (msg, arg) {
                         self.messageParser(ws, user, msg, arg);
                     });
@@ -115,6 +121,9 @@ class WsGateway extends EventEmitter {
         this.socket.on("open", function (a1, a2, a3) {
             self.emit(WsGateway.CONNECT, self);
             self.basicAuth();
+        });
+        this.socket.on('error',(e)=>{
+            self.emit(WsGateway.ERROR, e.code);
         });
     }
     sendTo(socket, target, method, packet, buffer) {
