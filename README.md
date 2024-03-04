@@ -1,6 +1,6 @@
 # WsGateway
 
-USE https://github.com/McRain/reneos.server
+# This repository is archived - please use https://github.com/McRain/reneos.server
 
 Easy and simple tools for creating gateways to communicate between client and server to use websocket and node.js.
 
